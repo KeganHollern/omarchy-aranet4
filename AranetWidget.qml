@@ -132,6 +132,7 @@ Panel {
 
     KeyboardPanel {
         id: panel
+        objectName: "aranetDetailsPanel"
         anchorItem: button
         owner: root
         bar: root.bar
@@ -179,6 +180,7 @@ Panel {
 
             Column {
                 id: contentColumn
+                objectName: "aranetReadingContent"
                 width: parent.width
                 spacing: Style.space(14)
 
@@ -255,18 +257,6 @@ Panel {
                             font.pixelSize: Style.font.caption
                         }
                     }
-                }
-
-                Text {
-                    width: parent.width
-                    visible: !root.setupNeeded && text !== ""
-                    textFormat: Text.PlainText
-                    text: root.statusMessage()
-                    color: root.barForeground
-                    opacity: 0.6
-                    font.family: button.fontFamily
-                    font.pixelSize: Style.font.caption
-                    wrapMode: Text.WordWrap
                 }
 
                 Column {
@@ -374,6 +364,7 @@ Panel {
                 PanelSeparator { visible: !root.setupNeeded; foreground: root.barForeground }
 
                 Item {
+                    objectName: "aranetReadingFooter"
                     width: parent.width
                     visible: !root.setupNeeded
                     implicitHeight: Math.max(deviceName.implicitHeight, sampleTime.implicitHeight)
@@ -392,13 +383,17 @@ Panel {
                     }
                     Text {
                         id: sampleTime
+                        objectName: "aranetReadingStatus"
                         anchors.right: parent.right
+                        width: Math.min(implicitWidth, parent.width * 0.7)
                         textFormat: Text.PlainText
-                        text: root.sampleAge()
+                        text: root.statusMessage() || root.sampleAge()
                         color: root.barForeground
                         opacity: 0.6
                         font.family: button.fontFamily
                         font.pixelSize: Style.font.caption
+                        horizontalAlignment: Text.AlignRight
+                        elide: Text.ElideRight
                     }
                 }
             }

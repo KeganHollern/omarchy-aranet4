@@ -74,6 +74,8 @@ A manual panel request can refresh while idle or with the lid closed on an exter
 
 Omarchy owns a single `Service.qml` instance for the enabled plugin. That service owns one Python worker shared by the widgets on all monitors. Requests and readings travel over bounded JSON lines on stdin/stdout. Disabling or removing the plugin stops its worker; closing stdin also makes the worker exit. There is no separately installed systemd service.
 
+The details panel keeps the previous reading visible during a refresh, with progress shown in its footer. New readings replace it when their timestamps have been checked against the system clock.
+
 The worker runs **directly from the installed plugin checkout**, so a normal update changes the interface and backend together:
 
 ```sh

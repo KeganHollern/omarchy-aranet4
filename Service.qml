@@ -17,6 +17,9 @@ Item {
     property var settings: ({})
     property var snapshot: null
     property var status: null
+    property var pendingSnapshot: null
+    property var pendingStatus: null
+    property int pendingClockRetries: 0
     property string bootId: ""
     property real uptime: -1
     property string lastError: ""
@@ -84,7 +87,9 @@ Item {
 
     function configure(value) {
         if (destroying || !value || typeof value !== "object") return
+        var previousSignature = desiredSignature
         settings = Object.assign({}, value)
+        if (desiredSignature !== previousSignature) clearPending()
         checkSetup()
         if (!setupBusy && dependenciesReady) {
             if (configured) setSetupPhase("ready")
@@ -173,6 +178,7 @@ Item {
             setSetupPhase("error", "Could not save the selected device. Please try again.")
             return
         }
+        clearPending()
         settings = selected
         snapshot = null
         status = null
@@ -181,6 +187,7 @@ Item {
     }
 
     function unavailable() {
+        clearPending()
         status = { schema: 1, address: address, boot_id: bootId, present: false,
             refreshing: false, last_attempt: Math.max(0, uptime),
             expires_boottime: Math.max(0, uptime), next_scan: null, pause_reason: "" }
@@ -270,20 +277,70 @@ Item {
         if (event.type === "snapshot") {
             if (Snapshot.boundedNumber(value.co2, 1, 32767) === null || Math.floor(value.co2) !== value.co2
                 || Snapshot.boundedNumber(value.seen_boottime, 0, 1e12) === null) return
-            snapshot = value
+            pendingSnapshot = value
         } else {
             if (typeof value.present !== "boolean" || typeof value.refreshing !== "boolean"
                 || Snapshot.boundedNumber(value.last_attempt, 0, 1e12) === null
                 || Snapshot.boundedNumber(value.expires_boottime, 0, 1e12) === null) return
-            status = value
+            pendingStatus = value
         }
-        lastError = ""
+        pendingClockRetries = 0
         uptimeFile.reload()
+    }
+
+    function clearPending() {
+        pendingSnapshot = null
+        pendingStatus = null
+        pendingClockRetries = 0
+    }
+
+    function applyPending() {
+        if (destroying || Snapshot.boundedNumber(uptime, 0, 1e12) === null) return
+        var changed = false
+        if (pendingSnapshot) {
+            if (pendingSnapshot.address !== address || pendingSnapshot.boot_id !== bootId) {
+                pendingSnapshot = null
+            } else if (pendingSnapshot.seen_boottime <= uptime) {
+                snapshot = pendingSnapshot
+                pendingSnapshot = null
+                changed = true
+            }
+        }
+        if (pendingStatus) {
+            if (pendingStatus.address !== address || pendingStatus.boot_id !== bootId) {
+                pendingStatus = null
+            } else if (pendingStatus.last_attempt <= uptime) {
+                status = pendingStatus
+                pendingStatus = null
+                changed = true
+            }
+        }
+        if (changed) lastError = ""
+    }
+
+    function updateUptime(value) {
+        if (Snapshot.boundedNumber(value, 0, 1e12) === null) return
+        // /proc/uptime truncates to hundredths; its next hundredth is the
+        // upper bound for full-precision worker timestamps from the same read.
+        uptime = Math.max(uptime, value + 0.01)
+        applyPending()
+        var snapshotNear = pendingSnapshot && pendingSnapshot.seen_boottime > uptime
+            && pendingSnapshot.seen_boottime <= uptime + 1
+        var statusNear = pendingStatus && pendingStatus.last_attempt > uptime
+            && pendingStatus.last_attempt <= uptime + 1
+        if (pendingClockRetries === 0 && (snapshotNear || statusNear)) {
+            pendingClockRetries++
+            // A read already in flight can predate the newest buffered event.
+            // Retry once for that race; arbitrary future timestamps cannot poll.
+            Qt.callLater(function() {
+                if (!destroying && (pendingSnapshot || pendingStatus)) uptimeFile.reload()
+            })
+        }
     }
 
     onShellChanged: loadSettings()
     onManifestChanged: loadSettings()
-    onBootIdChanged: reconcile()
+    onBootIdChanged: { clearPending(); reconcile() }
     Component.onCompleted: { loadSettings(); checkSetup() }
     Component.onDestruction: {
         destroying = true
@@ -378,9 +435,8 @@ Item {
         printErrors: false
         onLoaded: {
             var value = Number(text().trim().split(/\s+/)[0])
-            root.uptime = isFinite(value) && value >= 0 ? value : -1
+            root.updateUptime(value)
         }
-        onLoadFailed: root.uptime = -1
     }
     IdleMonitor {
         id: idleMonitor
