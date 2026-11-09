@@ -136,6 +136,52 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
                                  AranetType=SimpleNamespace(ARANET4=0))
         self.enterContext(patch.dict(sys.modules, {"aranet4": SimpleNamespace(), "aranet4.client": client}))
 
+    async def discover_timeline(self, advertisements, *, duration=3, settle=.3):
+        """Advance discovery time without wall-clock sleeps or real Bluetooth."""
+        clock = SimpleNamespace(now=0.0)
+        pending = sorted(advertisements, key=lambda event: event[0])
+        delivered = []
+        stopped = []
+        real_sleep = asyncio.sleep
+        test = self
+
+        class Scanner:
+            def __init__(self, **options):
+                self.callback = options["detection_callback"]
+
+            def advance(self, target):
+                while pending and pending[0][0] <= target:
+                    at, address, readable = pending.pop(0)
+                    clock.now = at
+                    test.decoded.readings = SimpleNamespace(type=0, co2=650) if readable else None
+                    self.callback(SimpleNamespace(address=address, name="Aranet4 example"), SimpleNamespace())
+                    delivered.append((at, address, readable))
+                clock.now = target
+
+            async def start(self):
+                self.advance(0)
+
+            async def stop(self):
+                stopped.append(clock.now)
+
+        scanner = Scanner(detection_callback=lambda *_: None)
+
+        def scanner_factory(**options):
+            scanner.callback = options["detection_callback"]
+            return scanner
+
+        async def advance_sleep(delay):
+            scanner.advance(clock.now + delay)
+            await real_sleep(0)
+
+        with patch.dict(sys.modules, {"bleak": SimpleNamespace(BleakScanner=scanner_factory)}), \
+                patch.object(setup, "DISCOVERY_SETTLE_SECONDS", settle), \
+                patch.object(setup.asyncio, "get_running_loop", return_value=SimpleNamespace(time=lambda: clock.now)), \
+                patch.object(setup.asyncio, "sleep", side_effect=advance_sleep):
+            result = await asyncio.wait_for(setup.discover_devices(duration), timeout=1)
+        self.assertEqual(stopped, [clock.now], "The scanner must stop exactly once before returning")
+        return result, clock.now, delivered
+
     def test_named_sensor_without_smart_home_data_remains_selectable_as_unreadable(self):
         device = SimpleNamespace(address=ADDRESS, name="Aranet4 example")
         result = setup.discovered_device(device, SimpleNamespace())
@@ -172,6 +218,50 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["devices"]), 16)
         self.assertEqual(len({value["address"] for value in result["devices"]}), 16)
         self.assertEqual(stopped, [True])
+
+    async def test_readable_sensor_returns_after_short_collection_grace(self):
+        result, elapsed, _ = await self.discover_timeline([(0, ADDRESS, True)])
+        self.assertAlmostEqual(elapsed, .3)
+        self.assertTrue(result["devices"][0]["readable"])
+
+    async def test_second_readable_sensor_inside_grace_is_included(self):
+        second = "11:22:33:44:55:66"
+        result, elapsed, _ = await self.discover_timeline([(0, ADDRESS, True), (.2, second, True)])
+        self.assertEqual({device["address"] for device in result["devices"]}, {ADDRESS, second})
+        self.assertAlmostEqual(elapsed, .3)
+
+    async def test_duplicate_broadcasts_do_not_extend_collection_grace(self):
+        result, elapsed, delivered = await self.discover_timeline(
+            [(0, ADDRESS, True), (.2, ADDRESS, True), (.4, ADDRESS, True)])
+        self.assertEqual(len(result["devices"]), 1)
+        self.assertAlmostEqual(elapsed, .3)
+        self.assertEqual(len(delivered), 2, "The post-grace duplicate must never be awaited")
+
+    async def test_unreadable_only_broadcasts_keep_full_search_window(self):
+        second = "11:22:33:44:55:66"
+        result, elapsed, delivered = await self.discover_timeline(
+            [(0, ADDRESS, False), (2.9, second, False)])
+        self.assertAlmostEqual(elapsed, 3)
+        self.assertEqual(len(delivered), 2)
+        self.assertEqual(len(result["devices"]), 2)
+        self.assertTrue(all(not device["readable"] for device in result["devices"]))
+
+    async def test_unreadable_sensor_upgrading_to_readable_starts_grace(self):
+        result, elapsed, delivered = await self.discover_timeline(
+            [(0, ADDRESS, False), (.4, ADDRESS, True), (.8, ADDRESS, True)])
+        self.assertAlmostEqual(elapsed, .7)
+        self.assertEqual(len(delivered), 2)
+        self.assertEqual(result["devices"], [{"address": ADDRESS, "name": "Aranet4 example", "readable": True}])
+
+    async def test_late_readable_sensor_does_not_extend_hard_deadline(self):
+        result, elapsed, _ = await self.discover_timeline([(2.9, ADDRESS, True)])
+        self.assertAlmostEqual(elapsed, 3)
+        self.assertTrue(result["devices"][0]["readable"])
+
+    async def test_no_sensor_keeps_full_search_window(self):
+        result, elapsed, _ = await self.discover_timeline([])
+        self.assertAlmostEqual(elapsed, 3)
+        self.assertEqual(result["devices"], [])
 
     async def test_cancelled_discovery_stops_scanner(self):
         stopped = []

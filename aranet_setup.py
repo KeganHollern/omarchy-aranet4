@@ -20,6 +20,7 @@ from aranet_bar import clean_name, normalize_address
 MAX_DIAGNOSTICS = 16384
 MAX_DEVICES = 16
 DISCOVERY_SECONDS = 15
+DISCOVERY_SETTLE_SECONDS = 0.75
 
 
 class SetupError(RuntimeError):
@@ -227,8 +228,11 @@ async def discover_devices(duration=DISCOVERY_SECONDS, cancellation=None):
     from bleak import BleakScanner
 
     found = {}
+    loop = asyncio.get_running_loop()
+    settle_deadline = None
 
     def received(device, advertisement):
+        nonlocal settle_deadline
         result = discovered_device(device, advertisement)
         if result is None or (result["address"] not in found and len(found) >= MAX_DEVICES):
             return
@@ -236,27 +240,36 @@ async def discover_devices(duration=DISCOVERY_SECONDS, cancellation=None):
         if previous and previous["readable"]:
             result["readable"] = True
         found[result["address"]] = result
+        # Return promptly once there is a usable choice, while allowing a
+        # short window for other nearby monitors. Repeated broadcasts must
+        # not extend this window; unreadable ones keep the full search time.
+        if result["readable"] and settle_deadline is None:
+            settle_deadline = loop.time() + DISCOVERY_SETTLE_SECONDS
 
     scanner = BleakScanner(detection_callback=received, scanning_mode="active",
                            bluez={"filters": {"DuplicateData": True}})
-    deadline = asyncio.get_running_loop().time() + duration
+    deadline = loop.time() + duration
     starting = None
     try:
         if cancellation:
             cancellation.poll()
         starting = asyncio.create_task(scanner.start())
-        start_deadline = min(deadline, asyncio.get_running_loop().time() + 10)
+        start_deadline = min(deadline, loop.time() + 10)
         while not starting.done():
             if cancellation:
                 cancellation.poll()
-            if asyncio.get_running_loop().time() >= start_deadline:
+            if loop.time() >= start_deadline:
                 raise SetupError("Bluetooth discovery could not start in time.")
             await asyncio.wait({starting}, timeout=.05)
         await starting
-        while asyncio.get_running_loop().time() < deadline:
+        while loop.time() < deadline:
             if cancellation:
                 cancellation.poll()
-            await asyncio.sleep(min(.1, max(0, deadline - asyncio.get_running_loop().time())))
+            current_deadline = min(deadline, settle_deadline) if settle_deadline is not None else deadline
+            remaining = current_deadline - loop.time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(.1, remaining))
     finally:
         if starting is not None and not starting.done():
             starting.cancel()
