@@ -1,0 +1,19 @@
+{
+  "title": "Air quality",
+  "co2": "Carbon dioxide",
+  "temperature": "Temperature",
+  "humidity": "Humidity",
+  "pressure": "Pressure",
+  "battery": "Battery",
+  "sample.justNow": "Sample just now",
+  "sample.minutesAgo": {
+    "one": "Sample %1 min ago",
+    "other": "Sample %1 min ago"
+  },
+  "status.refreshing": "Refreshing…",
+  "status.unavailableCached": "Unavailable · last sample",
+  "status.unavailable": "Aranet4 unavailable",
+  "status.paused": "Updates paused",
+  "status.waiting": "Waiting for a reading",
+  "status.cached": "Last known reading"
+}

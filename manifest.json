@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "kegan.aranet4",
+  "name": "Aranet4",
+  "version": "1.3.0",
+  "author": "Kegan Hollern",
+  "license": "MIT",
+  "description": "CO₂ reading and environmental details from a nearby Aranet4.",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "AranetWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Aranet4",
+    "category": "Environment",
+    "allowMultiple": false,
+    "defaultSection": "centerBegin"
+  },
+  "repository": "https://github.com/keganhollern/omarchy-aranet4"
+}
