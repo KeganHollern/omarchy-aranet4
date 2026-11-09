@@ -32,7 +32,7 @@ Click the air icon with the small setup dot:
 
 *The native setup panel rendered with example setup state.*
 
-Dependencies live in an isolated environment at `~/.local/share/omarchy-aranet4/venv/`; system Python packages are not changed. Installation happens only when requested, not during normal refreshes or each shell startup. The selected monitor is saved in Omarchy's bar configuration. A new widget starts in `centerBegin`; move it with Omarchy's bar configuration.
+Dependencies live in an isolated environment at `~/.local/share/omarchy-aranet4/venv/`; system Python packages are not changed. Installation happens only when requested, not during normal refreshes or each shell startup. The selected monitor is saved in Omarchy's bar configuration. A new widget starts beside the clock; move it with Omarchy's bar configuration.
 
 Discovery finishes shortly after finding a monitor with readable data, with a brief window to collect other nearby monitors. If none is ready, it searches for up to 15 seconds. Use **Scan again** if your monitor is not listed.
 
