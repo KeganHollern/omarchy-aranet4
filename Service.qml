@@ -6,6 +6,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import "Snapshot.js" as Snapshot
+import "Setup.js" as Setup
 
 // One service per enabled plugin, shared by every monitor's widget.
 Item {
@@ -27,13 +28,23 @@ Item {
     property int failures: 0
     property double startedAt: 0
     property string activeSignature: ""
+    property var setupState: ({ phase: "checking", devices: [], message: "" })
+    property bool dependenciesReady: false
+    property string checkedPython: ""
+    property string setupAction: ""
+    property string setupPython: ""
+    property string setupFailure: ""
+
+    readonly property bool setupBusy: setupTask.running
+    readonly property bool setupNeeded: setupState.phase !== "ready"
 
     readonly property string pluginId: manifest && typeof manifest.id === "string" ? manifest.id : "kegan.aranet4"
     readonly property string address: typeof settings.address === "string" ? settings.address.toUpperCase() : ""
     readonly property string home: Quickshell.env("HOME")
     readonly property string pythonPath: typeof settings.pythonPath === "string" && settings.pythonPath !== ""
-        ? settings.pythonPath : home + "/.local/share/omarchy-aranet4/venv/bin/python"
+        ? settings.pythonPath : (Quickshell.env("XDG_DATA_HOME") || home + "/.local/share") + "/omarchy-aranet4/venv/bin/python"
     readonly property string workerPath: decodeURIComponent(String(Qt.resolvedUrl("aranet_bar.py")).replace(/^file:\/\//, ""))
+    readonly property string setupPath: decodeURIComponent(String(Qt.resolvedUrl("aranet_setup.py")).replace(/^file:\/\//, ""))
     readonly property string cacheDir: typeof settings.cachePath === "string" && settings.cachePath.lastIndexOf("/") > 0
         ? settings.cachePath.slice(0, settings.cachePath.lastIndexOf("/"))
         : (Quickshell.env("XDG_CACHE_HOME") || home + "/.cache") + "/omarchy-aranet4"
@@ -47,7 +58,7 @@ Item {
         target: root.pluginId
         function status(): string {
             return JSON.stringify({ running: root.running, state: root.status,
-                snapshot: root.snapshot, lastError: root.lastError })
+                snapshot: root.snapshot, lastError: root.lastError, setup: root.setupState })
         }
     }
 
@@ -74,6 +85,98 @@ Item {
     function configure(value) {
         if (destroying || !value || typeof value !== "object") return
         settings = Object.assign({}, value)
+        checkSetup()
+        if (!setupBusy && dependenciesReady) {
+            if (configured) setSetupPhase("ready")
+            else if (setupState.phase === "ready") setSetupPhase("discovery")
+        }
+        reconcile()
+    }
+
+    function setSetupPhase(phase, message, devices) {
+        setupState = { phase: phase, message: message || "", devices: devices || [] }
+    }
+
+    function checkSetup() {
+        if (destroying || setupBusy || checkedPython === pythonPath) return
+        dependenciesReady = false
+        runSetup("status")
+    }
+
+    function runSetup(action) {
+        if (destroying || setupBusy) return
+        setupAction = action
+        setupPython = pythonPath
+        setupFailure = ""
+        setupStderr.text = ""
+        setSetupPhase(action === "install" ? "installing" : action === "discover" ? "scanning" : "checking")
+        setupTask.command = action === "discover"
+            ? [pythonPath, setupPath, "discover"]
+            : ["/usr/bin/python", setupPath, action, "--python", pythonPath]
+        setupTask.running = true
+        setupTimeout.interval = action === "install" ? 300000 : action === "discover" ? 70000 : 20000
+        setupTimeout.restart()
+    }
+
+    function installDependencies() {
+        if (!setupBusy) runSetup("install")
+    }
+
+    function discoverDevices() {
+        if (setupBusy) return
+        if (!dependenciesReady) { runSetup("status"); return }
+        runSetup("discover")
+    }
+
+    function retrySetup() {
+        if (setupBusy) return
+        if (dependenciesReady && !configured) discoverDevices()
+        else { checkedPython = ""; checkSetup() }
+    }
+
+    function finishSetup(exitCode) {
+        setupTimeout.stop()
+        if (destroying) return
+        if (setupPython !== pythonPath) { checkedPython = ""; Qt.callLater(checkSetup); return }
+        var result = Setup.parseResult(setupStdout.text.trim(), setupAction)
+        if (setupFailure || exitCode !== 0 || !result || !result.ok) {
+            setSetupPhase("error", setupFailure || (result && result.error)
+                || Setup.cleanMessage(setupStderr.text, 320) || "Setup could not finish. Please try again.")
+            return
+        }
+        if (setupAction === "discover") {
+            setSetupPhase("select", "", result.devices)
+            return
+        }
+        checkedPython = pythonPath
+        dependenciesReady = result.dependencies_ready
+        if (!dependenciesReady) setSetupPhase("dependencies")
+        else if (configured) { setSetupPhase("ready"); reconcile() }
+        else if (setupAction === "install") Qt.callLater(discoverDevices)
+        else setSetupPhase("discovery")
+    }
+
+    function selectDevice(value) {
+        if (setupBusy || !dependenciesReady || typeof value !== "string") return
+        var device = setupState.devices.find(function(entry) { return entry.address === value })
+        if (!device) return
+        if (!device.readable) {
+            setSetupPhase("select", "Enable Smart Home integrations for this Aranet4 in the Aranet Home app, close the app, then scan again.", setupState.devices)
+            return
+        }
+        var selected = Object.assign({}, settings, { address: device.address, pythonPath: pythonPath })
+        var saved = shell && typeof shell.updateEntryInline === "function"
+            && shell.updateEntryInline(pluginId, selected)
+        var current = configuredEntry()
+        var alreadySaved = current && current.address === device.address && current.pythonPath === pythonPath
+        if (!saved && !alreadySaved) {
+            setSetupPhase("error", "Could not save the selected device. Please try again.")
+            return
+        }
+        settings = selected
+        snapshot = null
+        status = null
+        setSetupPhase("ready")
         reconcile()
     }
 
@@ -85,7 +188,7 @@ Item {
 
     function reconcile() {
         if (destroying) return
-        if (!configured || !bootId) {
+        if (!configured || !dependenciesReady || !bootId) {
             if (worker.running) worker.running = false
             return
         }
@@ -103,7 +206,7 @@ Item {
     }
 
     function startWorker() {
-        if (destroying || !configured || !bootId || worker.running) return
+        if (destroying || !configured || !dependenciesReady || !bootId || worker.running) return
         reconfiguring = false
         activeSignature = desiredSignature
         startedAt = Date.now()
@@ -181,11 +284,16 @@ Item {
     onShellChanged: loadSettings()
     onManifestChanged: loadSettings()
     onBootIdChanged: reconcile()
-    Component.onCompleted: loadSettings()
+    Component.onCompleted: { loadSettings(); checkSetup() }
     Component.onDestruction: {
         destroying = true
         retry.stop()
         stopWatchdog.stop()
+        setupTimeout.stop()
+        if (setupTask.running) {
+            setupTask.stdinEnabled = false
+            setupTask.running = false
+        }
         if (worker.running) {
             worker.stdinEnabled = false
             worker.running = false
@@ -195,6 +303,27 @@ Item {
     Connections {
         target: root.shell
         function onBarConfigChanged() { root.loadSettings() }
+    }
+
+    Process {
+        id: setupTask
+        stdinEnabled: true
+        stdout: StdioCollector { id: setupStdout; waitForEnd: true }
+        stderr: SplitParser {
+            onRead: function(data) {
+                if (typeof data === "string" && data.length <= 16384)
+                    setupStderr.text = data.slice(0, 320)
+            }
+        }
+        onExited: function(exitCode) { root.finishSetup(exitCode) }
+    }
+    QtObject { id: setupStderr; property string text: "" }
+    Timer {
+        id: setupTimeout
+        onTriggered: {
+            root.setupFailure = "Setup took too long. Please try again."
+            setupTask.running = false
+        }
     }
 
     Process {

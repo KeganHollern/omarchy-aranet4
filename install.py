@@ -13,13 +13,14 @@ import subprocess
 import tempfile
 
 from aranet_bar import cache_path, normalize_address
+from aranet_setup import install_dependencies
 
 WIDGET_ID = "kegan.aranet4"
 LEGACY_WIDGET_ID = "aranet4"
 PLUGIN_FILES = (
-    "AranetWidget.qml", "Service.qml", "Snapshot.js", "manifest.json",
+    "AranetWidget.qml", "Service.qml", "Snapshot.js", "Setup.js", "manifest.json",
     "aranet_bar.py", "adaptive_reader.py", "adaptive_policy.py", "power_state.py",
-    "requirements.txt", "install.py", "README.md", "LICENSE",
+    "requirements.txt", "install.py", "aranet_setup.py", "README.md", "LICENSE",
 )
 LEGACY_UNIT = "omarchy-aranet4.service"
 
@@ -129,9 +130,7 @@ def main():
     shell_file = config / "omarchy/shell.json"
     data.mkdir(parents=True, exist_ok=True)
     python = data / "venv/bin/python"
-    if not python.exists():
-        subprocess.run(["uv", "venv", "--python", "/usr/bin/python", str(data / "venv")], check=True)
-    subprocess.run(["uv", "pip", "install", "--python", str(python), "-r", str(source / "requirements.txt")], check=True)
+    install_dependencies(python, source=source)
     cache_root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "omarchy-aranet4"
     cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     reading_path = cache_path(cache_root, args.address)

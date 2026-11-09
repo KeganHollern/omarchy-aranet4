@@ -15,5 +15,19 @@
   "status.unavailable": "Aranet4 unavailable",
   "status.paused": "Updates paused",
   "status.waiting": "Waiting for a reading",
-  "status.cached": "Last known reading"
+  "status.cached": "Last known reading",
+  "setup.tooltip": "Set up Aranet4",
+  "setup.subtitle": "Set up Aranet4",
+  "setup.checking": "Checking your Aranet4 setup…",
+  "setup.dependencies": "Install the Bluetooth support for Aranet4. You only need to do this once.",
+  "setup.installing": "Installing Bluetooth support…",
+  "setup.discovery": "Enable Smart Home integrations in the Aranet Home app, close the app, and keep your monitor nearby.",
+  "setup.scanning": "Looking for nearby Aranet4 monitors…",
+  "setup.choose": "Choose your Aranet4 monitor.",
+  "setup.noneFound": "No Aranet4 monitors found. Keep your monitor nearby with Smart Home integrations enabled, then scan again.",
+  "setup.enableIntegrations": "For dimmed monitors, enable Smart Home integrations in the Aranet Home app, close the app, and scan again.",
+  "setup.install": "Install Bluetooth support",
+  "setup.scan": "Find my Aranet4",
+  "setup.scanAgain": "Scan again",
+  "setup.retry": "Try again"
 }

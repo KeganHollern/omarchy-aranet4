@@ -27,8 +27,10 @@ jobs:
         run: |
           python -m compileall -q .
           python -m unittest discover -s . -p 'test_*.py' -v
-      - name: Check snapshot rendering
-        run: node test_snapshot.js
+      - name: Check snapshot rendering and setup
+        run: |
+          node test_snapshot.js
+          node test_setup.js
       - name: Check plugin files
         run: |
           python - <<'PY'

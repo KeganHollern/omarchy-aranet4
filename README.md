@@ -1,6 +1,10 @@
 # Aranet4 for Omarchy
 
-An icon-only air quality widget for the Omarchy bar. Click the air icon for a native panel with CO₂ in ppm, temperature (°C), humidity, pressure, sensor battery, and measurement age. The icon hides after a failed presence check and returns when the sensor is detected again.
+An icon-only air quality widget for the Omarchy bar. Click the air icon for a native panel with CO₂ in ppm, temperature (°C), humidity, pressure, sensor battery, and measurement age. After setup, the icon hides after a failed presence check and returns when the sensor is detected again.
+
+![Aranet4 air icon and open details panel in Omarchy](preview.png)
+
+*The native widget shown with example sensor readings.*
 
 ## Requirements
 
@@ -8,25 +12,35 @@ An icon-only air quality widget for the Omarchy bar. Click the air icon for a na
 - Python 3 and [`uv`](https://docs.astral.sh/uv/) for the one-time dependency setup.
 - An Aranet4 with firmware **1.2.0 or newer** and **Smart Home integrations** enabled in the Aranet Home app.
 
-Close the phone app after changing the sensor settings: an active connection from another device can interrupt its broadcasts. Use the sensor's Bluetooth address during installation.
+Close the phone app after changing the sensor settings: an active connection from another device can interrupt its broadcasts.
 
 ## Install
 
-Add the repository through Omarchy:
+Add and enable the plugin:
 
 ```sh
-omarchy plugin add https://github.com/keganhollern/omarchy-aranet4.git
+omarchy plugin add https://github.com/keganhollern/omarchy-aranet4.git --enable
 ```
 
-Choose **No** if Omarchy offers to enable the plugin yet. Adding a plugin does **not** install its Python dependencies. Complete setup with your sensor's Bluetooth address:
+Click the air icon with the small setup dot:
+
+1. Enable **Smart Home integrations** in the Aranet Home app, close the app, and keep the monitor nearby.
+2. Choose **Install Bluetooth support** to install the pinned Python dependencies and start discovery. If support is already installed, choose **Find my Aranet4**.
+3. Select your monitor when discovery finishes. Use **Scan again** if needed.
+
+![Aranet4 native setup panel](setup-preview.png)
+
+*The native setup panel rendered with example setup state.*
+
+Dependencies live in an isolated environment at `~/.local/share/omarchy-aranet4/venv/`; system Python packages are not changed. Installation happens only when requested, not during normal refreshes or each shell startup. The selected monitor is saved in Omarchy's bar configuration. A new widget starts in `centerBegin`; move it with Omarchy's bar configuration.
+
+If you already know the Bluetooth address, you can use this command instead of the panel:
 
 ```sh
 python ~/.config/omarchy/plugins/kegan.aranet4/install.py --address AA:BB:CC:DD:EE:FF
 ```
 
-The setup command installs the pinned dependencies into an isolated environment at `~/.local/share/omarchy-aranet4/venv/`, configures the widget, and enables it. It backs up `~/.config/omarchy/shell.json` before changing it and preserves an existing widget's bar position. A new widget starts in `centerBegin`; move it with Omarchy's bar configuration.
-
-Setup is safe to rerun from the installed checkout. Dependencies are installed during setup, not each time the shell starts. The paths above use the standard XDG directories; the installer also honors `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `XDG_CACHE_HOME`.
+This command also enables the plugin, backs up `~/.config/omarchy/shell.json` before changing it, and preserves an existing widget's bar position. It is safe to rerun. The paths above use the standard XDG directories; setup also honors `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `XDG_CACHE_HOME`.
 
 To install a development checkout instead, run `python install.py --address AA:BB:CC:DD:EE:FF` from its directory. This copies its runtime files into the installed plugin directory; rerun that command after editing the development checkout.
 
@@ -64,7 +78,7 @@ The worker runs **directly from the installed plugin checkout**, so a normal upd
 omarchy plugin update kegan.aranet4
 ```
 
-If an update changes `requirements.txt`, rerun the setup command to update the Python environment. Restart the shell with `omarchy restart shell` if it retains old plugin code after an update.
+If an update changes `requirements.txt`, use **Install Bluetooth support** when prompted, or rerun the manual setup command. Restart the shell with `omarchy restart shell` if it retains old plugin code after an update.
 
 Only a private last-reading cache and a per-sensor lock are stored under `~/.cache/omarchy-aranet4/`. There are no control/status files to poll, and no readings are sent to a server. To inspect the worker's current state, latest snapshot, and last error:
 
@@ -85,16 +99,17 @@ No separate service needs stopping. The Python environment, reading cache, and a
 
 ## Development
 
-Run the tests from the repository root; Node.js is needed only for the JavaScript test:
+Run the tests from the repository root; Node.js is needed only for the JavaScript tests:
 
 ```sh
 python -m unittest -v
 node test_snapshot.js
+node test_setup.js
 omarchy plugin validate .
 ```
 
-The Python and JavaScript tests use synthetic readings and mocked hardware. They cover scheduling, power/session changes, rendering, input validation, cache handling, worker shutdown, and the stdin/stdout protocol.
+The Python and JavaScript tests use synthetic readings and mocked hardware. They cover onboarding, scheduling, power/session changes, rendering, input validation, cache handling, worker shutdown, and the stdin/stdout protocol.
 
-`aranet_bar.py` handles readings and the worker entry point; `adaptive_reader.py` and `adaptive_policy.py` handle scheduling; `power_state.py` observes system state. `Service.qml` owns the worker, and `AranetWidget.qml` renders the icon and panel.
+`aranet_setup.py` handles dependency setup and discovery. `aranet_bar.py` handles readings and the worker entry point; `adaptive_reader.py` and `adaptive_policy.py` handle scheduling; `power_state.py` observes system state. `Service.qml` owns the worker, and `AranetWidget.qml` renders the icon and panel.
 
 Licensed under the [MIT License](LICENSE). Bluetooth decoding uses the [Aranet4 Python client](https://github.com/Anrijs/Aranet4-Python).
