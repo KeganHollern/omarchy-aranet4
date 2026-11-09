@@ -28,7 +28,7 @@ Click the air icon with the small setup dot:
 2. Choose **Install Bluetooth support** to install the pinned Python dependencies and start discovery. If support is already installed, choose **Find my Aranet4**.
 3. Select your monitor when discovery finishes. Use **Scan again** if needed.
 
-![Aranet4 native setup panel](setup-preview.png)
+![Aranet4 native setup panel](onboarding-preview.png)
 
 *The native setup panel rendered with example setup state.*
 
